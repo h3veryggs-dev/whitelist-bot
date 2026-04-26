@@ -33,85 +33,137 @@ const perguntas = [
   "Você leu as regras?"
 ];
 
+// 🔥 TRANSCRIPT BONITO COM LINK
 async function enviarTranscript(channel, membroId = null) {
   try {
     const mensagens = await channel.messages.fetch({ limit: 100 });
-    const mensagensOrdenadas = [...mensagens.values()].reverse();
+    const msgs = [...mensagens.values()].reverse();
 
-    const transcript = `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📄 TRANSCRIPT DO TICKET
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const htmlMsgs = msgs.map(m => {
+      const avatar = m.author.displayAvatarURL({ extension: "png" });
+      const data = m.createdAt.toLocaleString("pt-BR");
+      const conteudo = (m.content || "[sem texto]")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
 
-🏠 Servidor: ${channel.guild.name}
-🎫 Canal: #${channel.name}
-💬 Mensagens: ${mensagensOrdenadas.length}
-📅 Gerado em: ${new Date().toLocaleString("pt-BR")}
+      return `
+      <div class="msg">
+        <img src="${avatar}" class="avatar">
+        <div>
+          <div>
+            <span class="author">${m.author.tag}</span>
+            <span class="date">${data}</span>
+          </div>
+          <div class="text">${conteudo}</div>
+        </div>
+      </div>`;
+    }).join("");
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📌 MENSAGENS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>${channel.name}</title>
+<style>
+body {
+  margin: 0;
+  padding: 25px;
+  background: #313338;
+  color: #dbdee1;
+  font-family: Arial;
+}
+.header {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 25px;
+}
+.icon {
+  width: 80px;
+  height: 80px;
+}
+.title {
+  font-size: 26px;
+  color: white;
+}
+.subtitle {
+  font-size: 22px;
+}
+.msg {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+}
+.author {
+  font-weight: bold;
+  color: white;
+}
+.date {
+  color: #949ba4;
+  font-size: 12px;
+  margin-left: 6px;
+}
+.text {
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+</style>
+</head>
+<body>
 
-${mensagensOrdenadas.map(m => {
-  const data = m.createdAt.toLocaleString("pt-BR");
-  const autor = m.author.tag;
-  const conteudo = m.content || "[sem texto]";
+<div class="header">
+  <img class="icon" src="${channel.guild.iconURL() || ""}">
+  <div>
+    <div class="title">${channel.guild.name}</div>
+    <div class="subtitle">${channel.name}</div>
+    <div>${msgs.length} mensagens</div>
+  </div>
+</div>
 
-  return `
-👤 ${autor}
-🕒 ${data}
-💬 ${conteudo}
-──────────────────────────────────────`;
-}).join("\n")}
+${htmlMsgs}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ Transcript gerado automaticamente
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`;
+</body>
+</html>`;
 
-    const resposta = await axios.post("https://paste.rs", transcript, {
-      headers: {
-        "Content-Type": "text/plain"
-      }
+    const res = await axios.post("https://paste.rs", html, {
+      headers: { "Content-Type": "text/html" }
     });
 
-    const linkTranscript = resposta.data.trim();
+    const link = res.data.trim();
+
     const canalLogs = channel.guild.channels.cache.get(CANAL_TRANSCRIPT);
 
     if (canalLogs) {
-      await canalLogs.send({
-        content: `📄 **Transcript do ticket:** **${channel.name}**\n🔗 ${linkTranscript}`
-      });
+      await canalLogs.send(`📄 Transcript: **${channel.name}**\n🔗 ${link}`);
     }
 
     if (membroId) {
       const membro = await channel.guild.members.fetch(membroId).catch(() => null);
 
       if (membro) {
-        await membro.send({
-          content: `📄 Aqui está o transcript do seu ticket de whitelist:\n🔗 ${linkTranscript}`
-        }).catch(() => {
-          console.log("Não consegui enviar DM para o usuário.");
-        });
+        await membro.send(`📄 Seu transcript:\n🔗 ${link}`).catch(() => {});
       }
     }
 
   } catch (err) {
-    console.error("Erro transcript:", err);
+    console.error(err);
   }
 }
 
+// 🔒 FECHAR
 function fecharTicket(channel, membroId = null, tempo = 5000) {
   setTimeout(async () => {
-    try {
-      await enviarTranscript(channel, membroId);
-      await channel.delete("Ticket finalizado");
-    } catch (err) {
-      console.error("Erro ao fechar:", err);
-    }
+    await enviarTranscript(channel, membroId);
+    await channel.delete().catch(() => {});
   }, tempo);
 }
 
+// 📥 CRIAR BOTÃO
 client.on("channelCreate", async (channel) => {
   if (!channel.isTextBased()) return;
   if (channel.parentId !== CATEGORIA_WHITELIST) return;
@@ -126,9 +178,10 @@ client.on("channelCreate", async (channel) => {
   await channel.send({
     content: "Clique para iniciar sua whitelist.",
     components: [btn]
-  }).catch(console.error);
+  });
 });
 
+// 🎯 INTERAÇÕES
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
 
@@ -138,14 +191,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.customId === "iniciar") {
     await interaction.reply("Iniciando...");
 
-    const usuarioId = interaction.user.id;
-    const respostas = [];
+    const userId = interaction.user.id;
+    let respostas = [];
     let etapa = 0;
 
     await channel.send(perguntas[0]);
 
     const collector = channel.createMessageCollector({
-      filter: m => m.author.id === usuarioId,
+      filter: m => m.author.id === userId,
       time: 300000
     });
 
@@ -156,63 +209,55 @@ client.on(Events.InteractionCreate, async (interaction) => {
       if (etapa < perguntas.length) {
         await channel.send(perguntas[etapa]);
       } else {
-        collector.stop("finalizado");
+        collector.stop("ok");
       }
     });
 
-    collector.on("end", async (collected, reason) => {
-      if (reason !== "finalizado") {
-        await channel.send("⏰ Tempo esgotado. Ticket será fechado.").catch(() => {});
-        fecharTicket(channel, usuarioId);
+    collector.on("end", async (_, reason) => {
+      if (reason !== "ok") {
+        fecharTicket(channel, userId);
         return;
       }
 
-      const staffBtns = new ActionRowBuilder().addComponents(
+      const staff = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setCustomId(`aprovar_${usuarioId}`)
+          .setCustomId(`aprovar_${userId}`)
           .setLabel("✅ Aprovar")
           .setStyle(ButtonStyle.Success),
-
         new ButtonBuilder()
-          .setCustomId(`reprovar_${usuarioId}`)
+          .setCustomId(`reprovar_${userId}`)
           .setLabel("❌ Reprovar")
           .setStyle(ButtonStyle.Danger)
       );
 
-      await channel.send(`⏳ ${interaction.user}, aguarde um STAFF analisar suas respostas.`);
-
-      await channel.send({
-        content: "📋 Painel da Staff:",
-        components: [staffBtns]
-      });
+      await channel.send(`⏳ ${interaction.user}, aguarde um STAFF analisar.`);
+      await channel.send({ components: [staff] });
     });
   }
 
   if (interaction.customId.startsWith("aprovar_")) {
     if (!interaction.member.roles.cache.has(CARGO_STAFF)) {
-      return interaction.reply({ content: "Sem permissão.", ephemeral: true });
+      return interaction.reply({ content: "Sem permissão", ephemeral: true });
     }
 
-    const usuarioId = interaction.customId.replace("aprovar_", "");
-    const membro = await interaction.guild.members.fetch(usuarioId).catch(() => null);
+    const id = interaction.customId.split("_")[1];
+    const membro = await interaction.guild.members.fetch(id).catch(() => null);
 
-    if (membro) {
-      await membro.roles.add(CARGO_APROVADO).catch(console.error);
-    }
+    if (membro) await membro.roles.add(CARGO_APROVADO);
 
-    await interaction.reply("✅ Aprovado! Ticket será fechado.");
-    fecharTicket(channel, usuarioId);
+    await interaction.reply("✅ Aprovado!");
+    fecharTicket(channel, id);
   }
 
   if (interaction.customId.startsWith("reprovar_")) {
     if (!interaction.member.roles.cache.has(CARGO_STAFF)) {
-      return interaction.reply({ content: "Sem permissão.", ephemeral: true });
+      return interaction.reply({ content: "Sem permissão", ephemeral: true });
     }
 
-    const usuarioId = interaction.customId.replace("reprovar_", "");
+    const id = interaction.customId.split("_")[1];
 
-    await interaction.reply("❌ Reprovado! Ticket será fechado.");
-    fecharTicket(channel, usuarioId);
+    await interaction.reply("❌ Reprovado!");
+    fecharTicket(channel, id);
   }
 });
 
