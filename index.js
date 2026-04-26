@@ -36,17 +36,139 @@ async function enviarTranscript(channel, membroId = null) {
     const canalLogs = channel.guild.channels.cache.get(CANAL_TRANSCRIPT);
     const mensagens = await channel.messages.fetch({ limit: 100 });
 
-    const transcript = mensagens
-      .reverse()
-      .map(m => `[${m.createdAt.toLocaleString()}] ${m.author.tag}: ${m.content || "[sem texto]"}`)
-      .join("\n");
+    const mensagensOrdenadas = [...mensagens.values()].reverse();
 
-    const buffer = Buffer.from(transcript || "Sem mensagens.", "utf-8");
+    const htmlMensagens = mensagensOrdenadas.map(m => {
+      const avatar = m.author.displayAvatarURL({ extension: "png" });
+      const data = m.createdAt.toLocaleString("pt-BR");
+      const conteudo = m.content || "[sem texto]";
+
+      return `
+        <div class="message">
+          <img src="${avatar}" class="avatar">
+          <div class="content">
+            <div>
+              <span class="author">${m.author.tag}</span>
+              <span class="date">${data}</span>
+            </div>
+            <div class="text">${conteudo}</div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    const html = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Transcript - ${channel.name}</title>
+<style>
+  body {
+    background: #313338;
+    color: #dbdee1;
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 25px;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 25px;
+    border-bottom: 1px solid #4e5058;
+    padding-bottom: 15px;
+  }
+
+  .server-icon {
+    width: 70px;
+    height: 70px;
+    border-radius: 12px;
+    margin-right: 15px;
+  }
+
+  .title {
+    font-size: 26px;
+    font-weight: bold;
+    color: #ffffff;
+  }
+
+  .subtitle {
+    font-size: 18px;
+    color: #b5bac1;
+  }
+
+  .message {
+    display: flex;
+    margin-bottom: 18px;
+  }
+
+  .avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    margin-right: 12px;
+  }
+
+  .author {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 15px;
+  }
+
+  .date {
+    color: #949ba4;
+    font-size: 12px;
+    margin-left: 8px;
+  }
+
+  .text {
+    margin-top: 4px;
+    white-space: pre-wrap;
+    line-height: 1.4;
+  }
+
+  .footer {
+    margin-top: 30px;
+    color: #949ba4;
+    font-size: 13px;
+    border-top: 1px solid #4e5058;
+    padding-top: 15px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <img class="server-icon" src="${channel.guild.iconURL({ extension: "png" }) || ""}">
+  <div>
+    <div class="title">${channel.guild.name}</div>
+    <div class="subtitle">#${channel.name}</div>
+    <div class="subtitle">${mensagensOrdenadas.length} mensagens</div>
+  </div>
+</div>
+
+${htmlMensagens}
+
+<div class="footer">
+  Transcript gerado automaticamente pelo sistema de whitelist.
+</div>
+
+</body>
+</html>
+`;
+
+    const buffer = Buffer.from(html, "utf-8");
+
+    const arquivo = {
+      attachment: buffer,
+      name: `${channel.name}-transcript.html`
+    };
 
     if (canalLogs) {
       await canalLogs.send({
         content: `📄 Transcript do ticket: **${channel.name}**`,
-        files: [{ attachment: buffer, name: `${channel.name}-transcript.txt` }]
+        files: [arquivo]
       });
     }
 
@@ -56,12 +178,13 @@ async function enviarTranscript(channel, membroId = null) {
       if (membro) {
         await membro.send({
           content: `📄 Aqui está o transcript do seu ticket de whitelist: **${channel.name}**`,
-          files: [{ attachment: buffer, name: `${channel.name}-transcript.txt` }]
+          files: [arquivo]
         }).catch(() => {
           console.log("Não consegui enviar DM para o usuário.");
         });
       }
     }
+
   } catch (err) {
     console.error("Erro transcript:", err);
   }
@@ -129,35 +252,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     collector.on("end", async (collected, reason) => {
       if (reason !== "finalizado") {
         await channel.send("⏰ Tempo esgotado. Ticket será fechado.").catch(() => {});
-        fecharTicket(channel, usuarioId);
-        return;
-      }
-
-      const idade = parseInt(respostas[1]);
-      const historia = respostas[3] || "";
-      const historiaLower = historia.toLowerCase();
-      const regras = respostas[4]?.toLowerCase() || "";
-
-      if (!idade || idade < 14) {
-        await channel.send("❌ Reprovado: idade inválida.");
-        fecharTicket(channel, usuarioId);
-        return;
-      }
-
-      if (
-        historia.length < 30 ||
-        historiaLower.includes("não quero") ||
-        historiaLower.includes("nao quero") ||
-        historiaLower === "não" ||
-        historiaLower === "nao"
-      ) {
-        await channel.send("❌ Reprovado: história fraca ou inválida.");
-        fecharTicket(channel, usuarioId);
-        return;
-      }
-
-      if (!regras.includes("sim")) {
-        await channel.send("❌ Reprovado: não confirmou que leu as regras.");
         fecharTicket(channel, usuarioId);
         return;
       }
