@@ -7,11 +7,13 @@ const {
   Events
 } = require("discord.js");
 
+const axios = require("axios");
+
 const TOKEN = process.env.TOKEN;
 
 // IDs
 const CATEGORIA_WHITELIST = "1496029624088662049";
-const CANAL_TRANSCRIPT = "1496155923457118459";
+const CANAL_TRANSCRIPT = "COLOQUE_ID_DO_CANAL_TRANSCRIPT";
 const CARGO_APROVADO = "1496029516370415658";
 const CARGO_STAFF = "1496029476231053363";
 
@@ -33,142 +35,27 @@ const perguntas = [
 
 async function enviarTranscript(channel, membroId = null) {
   try {
-    const canalLogs = channel.guild.channels.cache.get(CANAL_TRANSCRIPT);
     const mensagens = await channel.messages.fetch({ limit: 100 });
-
     const mensagensOrdenadas = [...mensagens.values()].reverse();
 
-    const htmlMensagens = mensagensOrdenadas.map(m => {
-      const avatar = m.author.displayAvatarURL({ extension: "png" });
-      const data = m.createdAt.toLocaleString("pt-BR");
-      const conteudo = m.content || "[sem texto]";
+    const transcript = mensagensOrdenadas
+      .map(m => {
+        return `[${m.createdAt.toLocaleString("pt-BR")}] ${m.author.tag}: ${m.content || "[sem texto]"}`;
+      })
+      .join("\n");
 
-      return `
-        <div class="message">
-          <img src="${avatar}" class="avatar">
-          <div class="content">
-            <div>
-              <span class="author">${m.author.tag}</span>
-              <span class="date">${data}</span>
-            </div>
-            <div class="text">${conteudo}</div>
-          </div>
-        </div>
-      `;
-    }).join("");
+    const resposta = await axios.post("https://paste.rs", transcript || "Sem mensagens.", {
+      headers: {
+        "Content-Type": "text/plain"
+      }
+    });
 
-    const html = `
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<title>Transcript - ${channel.name}</title>
-<style>
-  body {
-    background: #313338;
-    color: #dbdee1;
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 25px;
-  }
-
-  .header {
-    display: flex;
-    align-items: center;
-    margin-bottom: 25px;
-    border-bottom: 1px solid #4e5058;
-    padding-bottom: 15px;
-  }
-
-  .server-icon {
-    width: 70px;
-    height: 70px;
-    border-radius: 12px;
-    margin-right: 15px;
-  }
-
-  .title {
-    font-size: 26px;
-    font-weight: bold;
-    color: #ffffff;
-  }
-
-  .subtitle {
-    font-size: 18px;
-    color: #b5bac1;
-  }
-
-  .message {
-    display: flex;
-    margin-bottom: 18px;
-  }
-
-  .avatar {
-    width: 42px;
-    height: 42px;
-    border-radius: 50%;
-    margin-right: 12px;
-  }
-
-  .author {
-    color: #ffffff;
-    font-weight: bold;
-    font-size: 15px;
-  }
-
-  .date {
-    color: #949ba4;
-    font-size: 12px;
-    margin-left: 8px;
-  }
-
-  .text {
-    margin-top: 4px;
-    white-space: pre-wrap;
-    line-height: 1.4;
-  }
-
-  .footer {
-    margin-top: 30px;
-    color: #949ba4;
-    font-size: 13px;
-    border-top: 1px solid #4e5058;
-    padding-top: 15px;
-  }
-</style>
-</head>
-<body>
-
-<div class="header">
-  <img class="server-icon" src="${channel.guild.iconURL({ extension: "png" }) || ""}">
-  <div>
-    <div class="title">${channel.guild.name}</div>
-    <div class="subtitle">#${channel.name}</div>
-    <div class="subtitle">${mensagensOrdenadas.length} mensagens</div>
-  </div>
-</div>
-
-${htmlMensagens}
-
-<div class="footer">
-  Transcript gerado automaticamente pelo sistema de whitelist.
-</div>
-
-</body>
-</html>
-`;
-
-    const buffer = Buffer.from(html, "utf-8");
-
-    const arquivo = {
-      attachment: buffer,
-      name: `${channel.name}-transcript.html`
-    };
+    const linkTranscript = resposta.data.trim();
+    const canalLogs = channel.guild.channels.cache.get(CANAL_TRANSCRIPT);
 
     if (canalLogs) {
       await canalLogs.send({
-        content: `📄 Transcript do ticket: **${channel.name}**`,
-        files: [arquivo]
+        content: `📄 **Transcript do ticket:** ${channel.name}\n🔗 ${linkTranscript}`
       });
     }
 
@@ -177,8 +64,7 @@ ${htmlMensagens}
 
       if (membro) {
         await membro.send({
-          content: `📄 Aqui está o transcript do seu ticket de whitelist: **${channel.name}**`,
-          files: [arquivo]
+          content: `📄 Aqui está o transcript do seu ticket de whitelist:\n🔗 ${linkTranscript}`
         }).catch(() => {
           console.log("Não consegui enviar DM para o usuário.");
         });
