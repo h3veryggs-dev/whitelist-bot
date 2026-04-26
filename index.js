@@ -38,13 +38,38 @@ async function enviarTranscript(channel, membroId = null) {
     const mensagens = await channel.messages.fetch({ limit: 100 });
     const mensagensOrdenadas = [...mensagens.values()].reverse();
 
-    const transcript = mensagensOrdenadas
-      .map(m => {
-        return `[${m.createdAt.toLocaleString("pt-BR")}] ${m.author.tag}: ${m.content || "[sem texto]"}`;
-      })
-      .join("\n");
+    const transcript = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📄 TRANSCRIPT DO TICKET
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    const resposta = await axios.post("https://paste.rs", transcript || "Sem mensagens.", {
+🏠 Servidor: ${channel.guild.name}
+🎫 Canal: #${channel.name}
+💬 Mensagens: ${mensagensOrdenadas.length}
+📅 Gerado em: ${new Date().toLocaleString("pt-BR")}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📌 MENSAGENS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${mensagensOrdenadas.map(m => {
+  const data = m.createdAt.toLocaleString("pt-BR");
+  const autor = m.author.tag;
+  const conteudo = m.content || "[sem texto]";
+
+  return `
+👤 ${autor}
+🕒 ${data}
+💬 ${conteudo}
+──────────────────────────────────────`;
+}).join("\n")}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Transcript gerado automaticamente
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+
+    const resposta = await axios.post("https://paste.rs", transcript, {
       headers: {
         "Content-Type": "text/plain"
       }
@@ -55,7 +80,7 @@ async function enviarTranscript(channel, membroId = null) {
 
     if (canalLogs) {
       await canalLogs.send({
-        content: `📄 **Transcript do ticket:** ${channel.name}\n🔗 ${linkTranscript}`
+        content: `📄 **Transcript do ticket:** **${channel.name}**\n🔗 ${linkTranscript}`
       });
     }
 
