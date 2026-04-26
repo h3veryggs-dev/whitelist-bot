@@ -7,13 +7,13 @@ const {
   Events
 } = require("discord.js");
 
-// 🔑 CONFIG
 const TOKEN = process.env.TOKEN;
 
-const CATEGORIA_TICKET = "1496029624088662049";
+// IDs
+const CATEGORIA_WHITELIST = "1496029624088662049";
+const CANAL_TRANSCRIPT = "1496155923457118459";
 const CARGO_APROVADO = "1496029516370415658";
 const CARGO_STAFF = "1496029476231053363";
-const CANAL_TRANSCRIPT = "1496155923457118459";
 
 const client = new Client({
   intents: [
@@ -31,15 +31,9 @@ const perguntas = [
   "Você leu as regras?"
 ];
 
-async function enviarTranscript(channel) {
+async function enviarTranscript(channel, membroId = null) {
   try {
     const canalLogs = channel.guild.channels.cache.get(CANAL_TRANSCRIPT);
-
-    if (!canalLogs) {
-      console.log("Canal de transcript não encontrado.");
-      return;
-    }
-
     const mensagens = await channel.messages.fetch({ limit: 100 });
 
     const transcript = mensagens
@@ -49,75 +43,75 @@ async function enviarTranscript(channel) {
 
     const buffer = Buffer.from(transcript || "Sem mensagens.", "utf-8");
 
-    await canalLogs.send({
-      content: `📄 Transcript do ticket: **${channel.name}**`,
-      files: [
-        {
-          attachment: buffer,
-          name: `${channel.name}-transcript.txt`
-        }
-      ]
-    });
+    if (canalLogs) {
+      await canalLogs.send({
+        content: `📄 Transcript do ticket: **${channel.name}**`,
+        files: [{ attachment: buffer, name: `${channel.name}-transcript.txt` }]
+      });
+    }
 
+    if (membroId) {
+      const membro = await channel.guild.members.fetch(membroId).catch(() => null);
+
+      if (membro) {
+        await membro.send({
+          content: `📄 Aqui está o transcript do seu ticket de whitelist: **${channel.name}**`,
+          files: [{ attachment: buffer, name: `${channel.name}-transcript.txt` }]
+        }).catch(() => {
+          console.log("Não consegui enviar DM para o usuário.");
+        });
+      }
+    }
   } catch (err) {
-    console.error("Erro ao enviar transcript:", err);
+    console.error("Erro transcript:", err);
   }
 }
 
-function fecharTicket(channel, tempo = 5000) {
+function fecharTicket(channel, membroId = null, tempo = 5000) {
   setTimeout(async () => {
     try {
-      await enviarTranscript(channel);
-
-      console.log("Fechando ticket:", channel.name);
+      await enviarTranscript(channel, membroId);
       await channel.delete("Ticket finalizado");
     } catch (err) {
-      console.error("Erro ao fechar ticket:", err);
+      console.error("Erro ao fechar:", err);
     }
   }, tempo);
 }
 
-// Quando abrir ticket
 client.on("channelCreate", async (channel) => {
   if (!channel.isTextBased()) return;
+  if (channel.parentId !== CATEGORIA_WHITELIST) return;
 
-  // Só cria botão em ticket de whitelist
-  if (!channel.name.toLowerCase().includes("whitelist")) return;
+  const btn = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("iniciar")
+      .setLabel("📋 Iniciar Whitelist")
+      .setStyle(ButtonStyle.Primary)
+  );
 
-  try {
-    const btn = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("iniciar")
-        .setLabel("📋 Iniciar Whitelist")
-        .setStyle(ButtonStyle.Primary)
-    );
-
-    await channel.send({
-      content: "Clique para iniciar sua whitelist.",
-      components: [btn]
-    });
-
-  } catch (err) {
-    console.error("Erro ao enviar botão:", err);
-  }
+  await channel.send({
+    content: "Clique para iniciar sua whitelist.",
+    components: [btn]
+  }).catch(console.error);
 });
 
-// Botões
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
 
   const channel = interaction.channel;
+  if (channel.parentId !== CATEGORIA_WHITELIST) return;
 
   if (interaction.customId === "iniciar") {
     await interaction.reply("Iniciando...");
 
-    let respostas = [];
+    const usuarioId = interaction.user.id;
+    const respostas = [];
     let etapa = 0;
 
     await channel.send(perguntas[0]);
 
     const collector = channel.createMessageCollector({
-      filter: m => m.author.id === interaction.user.id,
+      filter: m => m.author.id === usuarioId,
       time: 300000
     });
 
@@ -135,90 +129,85 @@ client.on(Events.InteractionCreate, async (interaction) => {
     collector.on("end", async (collected, reason) => {
       if (reason !== "finalizado") {
         await channel.send("⏰ Tempo esgotado. Ticket será fechado.").catch(() => {});
-        fecharTicket(channel);
+        fecharTicket(channel, usuarioId);
         return;
       }
 
-      try {
-        const idade = parseInt(respostas[1]);
-        const historia = respostas[3] || "";
-        const historiaLower = historia.toLowerCase();
-        const regras = respostas[4]?.toLowerCase() || "";
+      const idade = parseInt(respostas[1]);
+      const historia = respostas[3] || "";
+      const historiaLower = historia.toLowerCase();
+      const regras = respostas[4]?.toLowerCase() || "";
 
-        if (!idade || idade < 14) {
-          await channel.send("❌ Reprovado: idade inválida.");
-          fecharTicket(channel);
-          return;
-        }
-
-        if (
-          historia.length < 50 ||
-          historiaLower.includes("não quero") ||
-          historiaLower.includes("nao quero") ||
-          historiaLower === "não" ||
-          historiaLower === "nao"
-        ) {
-          await channel.send("❌ Reprovado: história fraca ou inválida.");
-          fecharTicket(channel);
-          return;
-        }
-
-        if (!regras.includes("sim")) {
-          await channel.send("❌ Reprovado: não confirmou que leu as regras.");
-          fecharTicket(channel);
-          return;
-        }
-
-        const staffBtns = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId("aprovar")
-            .setLabel("✅ Aprovar")
-            .setStyle(ButtonStyle.Success),
-
-          new ButtonBuilder()
-            .setCustomId("reprovar")
-            .setLabel("❌ Reprovar")
-            .setStyle(ButtonStyle.Danger)
-        );
-
-        await channel.send(`⏳ ${interaction.user}, aguarde um STAFF analisar suas respostas.`);
-
-        await channel.send({
-          content: "📋 Painel da Staff:",
-          components: [staffBtns]
-        });
-
-      } catch (err) {
-        console.error("Erro geral:", err);
-        await channel.send("⚠️ Ocorreu um erro. Ticket será fechado.").catch(() => {});
-        fecharTicket(channel);
+      if (!idade || idade < 14) {
+        await channel.send("❌ Reprovado: idade inválida.");
+        fecharTicket(channel, usuarioId);
+        return;
       }
+
+      if (
+        historia.length < 30 ||
+        historiaLower.includes("não quero") ||
+        historiaLower.includes("nao quero") ||
+        historiaLower === "não" ||
+        historiaLower === "nao"
+      ) {
+        await channel.send("❌ Reprovado: história fraca ou inválida.");
+        fecharTicket(channel, usuarioId);
+        return;
+      }
+
+      if (!regras.includes("sim")) {
+        await channel.send("❌ Reprovado: não confirmou que leu as regras.");
+        fecharTicket(channel, usuarioId);
+        return;
+      }
+
+      const staffBtns = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`aprovar_${usuarioId}`)
+          .setLabel("✅ Aprovar")
+          .setStyle(ButtonStyle.Success),
+
+        new ButtonBuilder()
+          .setCustomId(`reprovar_${usuarioId}`)
+          .setLabel("❌ Reprovar")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await channel.send(`⏳ ${interaction.user}, aguarde um STAFF analisar suas respostas.`);
+
+      await channel.send({
+        content: "📋 Painel da Staff:",
+        components: [staffBtns]
+      });
     });
   }
 
-  if (interaction.customId === "aprovar") {
+  if (interaction.customId.startsWith("aprovar_")) {
     if (!interaction.member.roles.cache.has(CARGO_STAFF)) {
       return interaction.reply({ content: "Sem permissão.", ephemeral: true });
     }
 
-    await interaction.reply("✅ Aprovado! Ticket será fechado.");
-
-    const membro = channel.guild.members.cache.get(channel.topic);
+    const usuarioId = interaction.customId.replace("aprovar_", "");
+    const membro = await interaction.guild.members.fetch(usuarioId).catch(() => null);
 
     if (membro) {
       await membro.roles.add(CARGO_APROVADO).catch(console.error);
     }
 
-    fecharTicket(channel);
+    await interaction.reply("✅ Aprovado! Ticket será fechado.");
+    fecharTicket(channel, usuarioId);
   }
 
-  if (interaction.customId === "reprovar") {
+  if (interaction.customId.startsWith("reprovar_")) {
     if (!interaction.member.roles.cache.has(CARGO_STAFF)) {
       return interaction.reply({ content: "Sem permissão.", ephemeral: true });
     }
 
+    const usuarioId = interaction.customId.replace("reprovar_", "");
+
     await interaction.reply("❌ Reprovado! Ticket será fechado.");
-    fecharTicket(channel);
+    fecharTicket(channel, usuarioId);
   }
 });
 
