@@ -7,8 +7,6 @@ const {
   Events
 } = require("discord.js");
 
-const axios = require("axios");
-
 const TOKEN = process.env.TOKEN;
 
 // IDs
@@ -33,20 +31,15 @@ const perguntas = [
   "Você leu as regras?"
 ];
 
-// 🔥 TRANSCRIPT BONITO COM LINK
-async function enviarTranscript(channel, membroId = null) {
-  try {
-    const mensagens = await channel.messages.fetch({ limit: 100 });
-    const msgs = [...mensagens.values()].reverse();
+function criarHTMLTranscript(channel, mensagensOrdenadas) {
+  const htmlMsgs = mensagensOrdenadas.map(m => {
+    const avatar = m.author.displayAvatarURL({ extension: "png" });
+    const data = m.createdAt.toLocaleString("pt-BR");
+    const conteudo = (m.content || "[sem texto]")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
 
-    const htmlMsgs = msgs.map(m => {
-      const avatar = m.author.displayAvatarURL({ extension: "png" });
-      const data = m.createdAt.toLocaleString("pt-BR");
-      const conteudo = (m.content || "[sem texto]")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-
-      return `
+    return `
       <div class="msg">
         <img src="${avatar}" class="avatar">
         <div>
@@ -57,9 +50,9 @@ async function enviarTranscript(channel, membroId = null) {
           <div class="text">${conteudo}</div>
         </div>
       </div>`;
-    }).join("");
+  }).join("");
 
-    const html = `
+  return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -71,7 +64,7 @@ body {
   padding: 25px;
   background: #313338;
   color: #dbdee1;
-  font-family: Arial;
+  font-family: Arial, sans-serif;
 }
 .header {
   display: flex;
@@ -81,13 +74,20 @@ body {
 .icon {
   width: 80px;
   height: 80px;
+  border-radius: 6px;
 }
 .title {
   font-size: 26px;
   color: white;
+  font-weight: bold;
 }
 .subtitle {
   font-size: 22px;
+  color: white;
+}
+.count {
+  font-size: 20px;
+  color: white;
 }
 .msg {
   display: flex;
@@ -121,7 +121,7 @@ body {
   <div>
     <div class="title">${channel.guild.name}</div>
     <div class="subtitle">${channel.name}</div>
-    <div>${msgs.length} mensagens</div>
+    <div class="count">${mensagensOrdenadas.length} mensagens</div>
   </div>
 </div>
 
@@ -129,33 +129,78 @@ ${htmlMsgs}
 
 </body>
 </html>`;
+}
 
-    const res = await axios.post("https://paste.rs", html, {
-      headers: { "Content-Type": "text/html" }
-    });
+async function enviarTranscript(channel, membroId = null) {
+  try {
+    const mensagens = await channel.messages.fetch({ limit: 100 });
+    const mensagensOrdenadas = [...mensagens.values()].reverse();
 
-    const link = res.data.trim();
+    const html = criarHTMLTranscript(channel, mensagensOrdenadas);
+    const buffer = Buffer.from(html, "utf-8");
+
+    const arquivo = {
+      attachment: buffer,
+      name: `${channel.name}-transcript.html`
+    };
 
     const canalLogs = channel.guild.channels.cache.get(CANAL_TRANSCRIPT);
 
     if (canalLogs) {
-      await canalLogs.send(`📄 Transcript: **${channel.name}**\n🔗 ${link}`);
+      const msgLog = await canalLogs.send({
+        content: `📄 Transcript do ticket: **${channel.name}**`,
+        files: [arquivo]
+      });
+
+      const anexo = msgLog.attachments.first();
+
+      if (anexo) {
+        const botao = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel("📥 Baixar Transcript")
+            .setStyle(ButtonStyle.Link)
+            .setURL(anexo.url)
+        );
+
+        await msgLog.edit({
+          content: `📄 Transcript do ticket: **${channel.name}**\nClique no botão abaixo para baixar.`,
+          components: [botao]
+        });
+      }
     }
 
     if (membroId) {
       const membro = await channel.guild.members.fetch(membroId).catch(() => null);
 
       if (membro) {
-        await membro.send(`📄 Seu transcript:\n🔗 ${link}`).catch(() => {});
+        const msgDM = await membro.send({
+          content: `📄 Aqui está o transcript do seu ticket de whitelist: **${channel.name}**`,
+          files: [arquivo]
+        }).catch(() => null);
+
+        const anexoDM = msgDM?.attachments?.first();
+
+        if (anexoDM) {
+          const botaoDM = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setLabel("📥 Baixar Transcript")
+              .setStyle(ButtonStyle.Link)
+              .setURL(anexoDM.url)
+          );
+
+          await msgDM.edit({
+            content: `📄 Aqui está o transcript do seu ticket de whitelist: **${channel.name}**\nClique no botão abaixo para baixar.`,
+            components: [botaoDM]
+          }).catch(() => {});
+        }
       }
     }
 
   } catch (err) {
-    console.error(err);
+    console.error("Erro transcript:", err);
   }
 }
 
-// 🔒 FECHAR
 function fecharTicket(channel, membroId = null, tempo = 5000) {
   setTimeout(async () => {
     await enviarTranscript(channel, membroId);
@@ -163,7 +208,6 @@ function fecharTicket(channel, membroId = null, tempo = 5000) {
   }, tempo);
 }
 
-// 📥 CRIAR BOTÃO
 client.on("channelCreate", async (channel) => {
   if (!channel.isTextBased()) return;
   if (channel.parentId !== CATEGORIA_WHITELIST) return;
@@ -181,7 +225,6 @@ client.on("channelCreate", async (channel) => {
   });
 });
 
-// 🎯 INTERAÇÕES
 client.on(Events.InteractionCreate, async (interaction) => {
   if (!interaction.isButton()) return;
 
@@ -192,7 +235,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     await interaction.reply("Iniciando...");
 
     const userId = interaction.user.id;
-    let respostas = [];
     let etapa = 0;
 
     await channel.send(perguntas[0]);
@@ -202,8 +244,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       time: 300000
     });
 
-    collector.on("collect", async (msg) => {
-      respostas.push(msg.content);
+    collector.on("collect", async () => {
       etapa++;
 
       if (etapa < perguntas.length) {
@@ -231,7 +272,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
       );
 
       await channel.send(`⏳ ${interaction.user}, aguarde um STAFF analisar.`);
-      await channel.send({ components: [staff] });
+      await channel.send({
+        content: "📋 Painel da Staff:",
+        components: [staff]
+      });
     });
   }
 
@@ -245,7 +289,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (membro) await membro.roles.add(CARGO_APROVADO);
 
-    await interaction.reply("✅ Aprovado!");
+    await interaction.reply("✅ Aprovado! Ticket será fechado.");
     fecharTicket(channel, id);
   }
 
@@ -256,7 +300,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const id = interaction.customId.split("_")[1];
 
-    await interaction.reply("❌ Reprovado!");
+    await interaction.reply("❌ Reprovado! Ticket será fechado.");
     fecharTicket(channel, id);
   }
 });
