@@ -256,7 +256,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     collector.on("end", async (_, reason) => {
       if (reason !== "ok") {
-        await channel.send("⏰ Tempo esgotado. Ticket será fechado.").catch(() => {});
         fecharTicket(channel, userId);
         return;
       }
