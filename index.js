@@ -15,6 +15,9 @@ const CANAL_TRANSCRIPT = "1496155923457118459";
 const CARGO_APROVADO = "1496029516370415658";
 const CARGO_STAFF = "1496029476231053363";
 
+// URL do seu Worker
+const WORKER_URL = process.env.WORKER_URL || "https://transcripts-whitelist.henrique-brantmoura.workers.dev";
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -36,15 +39,17 @@ function criarHTMLTranscript(channel, mensagensOrdenadas) {
     const avatar = m.author.displayAvatarURL({ extension: "png" });
     const data = m.createdAt.toLocaleString("pt-BR");
     const conteudo = (m.content || "[sem texto]")
+      .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
 
     return `
       <div class="msg">
         <img src="${avatar}" class="avatar">
-        <div>
+        <div class="content">
           <div>
             <span class="author">${m.author.tag}</span>
+            ${m.author.bot ? `<span class="bot">BOT</span>` : ""}
             <span class="date">${data}</span>
           </div>
           <div class="text">${conteudo}</div>
@@ -54,14 +59,14 @@ function criarHTMLTranscript(channel, mensagensOrdenadas) {
 
   return `
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <title>${channel.name}</title>
 <style>
 body {
   margin: 0;
-  padding: 25px;
+  padding: 30px;
   background: #313338;
   color: #dbdee1;
   font-family: Arial, sans-serif;
@@ -69,30 +74,26 @@ body {
 .header {
   display: flex;
   gap: 15px;
-  margin-bottom: 25px;
+  margin-bottom: 30px;
 }
 .icon {
-  width: 80px;
-  height: 80px;
+  width: 88px;
+  height: 88px;
   border-radius: 6px;
 }
 .title {
-  font-size: 26px;
+  font-size: 28px;
   color: white;
   font-weight: bold;
 }
-.subtitle {
+.subtitle, .count {
   font-size: 22px;
-  color: white;
-}
-.count {
-  font-size: 20px;
   color: white;
 }
 .msg {
   display: flex;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 .avatar {
   width: 42px;
@@ -103,21 +104,30 @@ body {
   font-weight: bold;
   color: white;
 }
+.bot {
+  background: #5865f2;
+  color: white;
+  font-size: 11px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  margin-left: 5px;
+}
 .date {
   color: #949ba4;
   font-size: 12px;
   margin-left: 6px;
 }
 .text {
-  margin-top: 4px;
+  margin-top: 5px;
   white-space: pre-wrap;
+  line-height: 1.4;
 }
 </style>
 </head>
 <body>
 
 <div class="header">
-  <img class="icon" src="${channel.guild.iconURL() || ""}">
+  <img class="icon" src="${channel.guild.iconURL({ extension: "png" }) || ""}">
   <div>
     <div class="title">${channel.guild.name}</div>
     <div class="subtitle">${channel.name}</div>
@@ -137,62 +147,42 @@ async function enviarTranscript(channel, membroId = null) {
     const mensagensOrdenadas = [...mensagens.values()].reverse();
 
     const html = criarHTMLTranscript(channel, mensagensOrdenadas);
-    const buffer = Buffer.from(html, "utf-8");
 
-    const arquivo = {
-      attachment: buffer,
-      name: `${channel.name}-transcript.html`
-    };
+    const resposta = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ html })
+    });
+
+    const data = await resposta.json();
+    const link = data.url;
+
+    const botao = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel("🌐 Ver Transcript")
+        .setStyle(ButtonStyle.Link)
+        .setURL(link)
+    );
 
     const canalLogs = channel.guild.channels.cache.get(CANAL_TRANSCRIPT);
 
     if (canalLogs) {
-      const msgLog = await canalLogs.send({
+      await canalLogs.send({
         content: `📄 Transcript do ticket: **${channel.name}**`,
-        files: [arquivo]
+        components: [botao]
       });
-
-      const anexo = msgLog.attachments.first();
-
-      if (anexo) {
-        const botao = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setLabel("📥 Baixar Transcript")
-            .setStyle(ButtonStyle.Link)
-            .setURL(anexo.url)
-        );
-
-        await msgLog.edit({
-          content: `📄 Transcript do ticket: **${channel.name}**\nClique no botão abaixo para baixar.`,
-          components: [botao]
-        });
-      }
     }
 
     if (membroId) {
       const membro = await channel.guild.members.fetch(membroId).catch(() => null);
 
       if (membro) {
-        const msgDM = await membro.send({
+        await membro.send({
           content: `📄 Aqui está o transcript do seu ticket de whitelist: **${channel.name}**`,
-          files: [arquivo]
-        }).catch(() => null);
-
-        const anexoDM = msgDM?.attachments?.first();
-
-        if (anexoDM) {
-          const botaoDM = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setLabel("📥 Baixar Transcript")
-              .setStyle(ButtonStyle.Link)
-              .setURL(anexoDM.url)
-          );
-
-          await msgDM.edit({
-            content: `📄 Aqui está o transcript do seu ticket de whitelist: **${channel.name}**\nClique no botão abaixo para baixar.`,
-            components: [botaoDM]
-          }).catch(() => {});
-        }
+          components: [botao]
+        }).catch(() => {});
       }
     }
 
@@ -256,6 +246,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     collector.on("end", async (_, reason) => {
       if (reason !== "ok") {
+        await channel.send("⏰ Tempo esgotado. Ticket será fechado.").catch(() => {});
         fecharTicket(channel, userId);
         return;
       }
