@@ -12,8 +12,9 @@ const TOKEN = process.env.TOKEN;
 // IDs
 const CATEGORIA_WHITELIST = "1496029624088662049";
 const CANAL_TRANSCRIPT = "1496155923457118459";
+const CARGO_SEM_WL = "1496029518031224842";
 const CARGO_APROVADO = "1496029516370415658";
-const CARGO_STAFF = "1496029476231053363";
+const CARGO_STAFF = "1496123378220929094";
 
 // URL do seu Worker
 const WORKER_URL = process.env.WORKER_URL || "https://transcripts-whitelist.henrique-brantmoura.workers.dev";
@@ -274,13 +275,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.member.roles.cache.has(CARGO_STAFF)) {
       return interaction.reply({ content: "Sem permissão", ephemeral: true });
     }
-
+  
     const id = interaction.customId.split("_")[1];
     const membro = await interaction.guild.members.fetch(id).catch(() => null);
-
-    if (membro) await membro.roles.add(CARGO_APROVADO);
-
-    await interaction.reply("✅ Aprovado! Ticket será fechado.");
+  
+    if (membro) {
+      await membro.roles.add(CARGO_APROVADO).catch(console.error);
+      await membro.roles.remove(CARGO_SEM_WL).catch(console.error);
+    }
+  
+    await interaction.reply("✅ Aprovado! Cargo entregue e ticket será fechado.");
     fecharTicket(channel, id);
   }
 
