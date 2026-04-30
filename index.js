@@ -29,11 +29,19 @@ const client = new Client({
 });
 
 const perguntas = [
-  "Qual seu nome real?",
-  "Qual sua idade real?",
-  "Já jogou RP antes?",
-  "Conte sua história:",
-  "Você leu as regras?"
+  "O que é RDM e por que ele é proibido no RP?",
+  "Explique o que significa VDM e dê um exemplo.",
+  "O que é combat logging (CL)?",
+  "Conte sua história do RP:",
+  "O que é considerado dark RP?",
+  "O que caracteriza um fail RP?",
+  "O que é metagaming? Cite uma situação onde isso acontece.",
+  "O que significa ter amor à vida dentro do RP?",
+  "Explique o que é cop bait.",
+  "Você presencia um crime, mas viu isso em live/Discord e não dentro do jogo. Como você age?",
+  "Seu personagem sofre um acidente grave. Como você deve agir em relação ao RP?",
+  "Você e seus amigos querem fazer vários roubos seguidos rapidamente. Isso pode? Justifique.",
+  "Você está sendo abordado por 2 policiais armados. O que você faz e por quê?"
 ];
 
 function criarHTMLTranscript(channel, mensagensOrdenadas) {
