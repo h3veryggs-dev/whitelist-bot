@@ -15,6 +15,7 @@ const CANAL_TRANSCRIPT = "1496155923457118459";
 const CARGO_SEM_WL = "1496029518031224842";
 const CARGO_APROVADO = "1496029516370415658";
 const CARGO_STAFF = "1496123378220929094";
+const CANAL_LOG_APROVACAO = "1499502969962496041";
 
 // URL do seu Worker
 const WORKER_URL = process.env.WORKER_URL || "https://transcripts-whitelist.henrique-brantmoura.workers.dev";
@@ -284,22 +285,58 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await membro.roles.remove(CARGO_SEM_WL).catch(console.error);
     }
   
-    await interaction.reply("✅ Aprovado! Cargo entregue e ticket será fechado.");
+    // 📄 LOG DE APROVAÇÃO
+    const canalLog = interaction.guild.channels.cache.get(CANAL_LOG_APROVACAO);
+  
+    if (canalLog) {
+      await canalLog.send({
+        content:
+  `✅ **Whitelist Aprovada**
+  
+  👤 **Usuário:** <@${id}>
+  🆔 **ID:** \`${id}\`
+  
+  🛡️ **Aprovado por:** <@${interaction.user.id}>
+  🆔 **ID Staff:** \`${interaction.user.id}\`
+  
+  🎫 **Ticket:** ${channel.name}
+  
+  📌 Use esse ID para vincular com denúncias`
+      });
+    }
+  
+    // 💬 RESPOSTA BONITA
+    await interaction.reply(
+  `✅ **Whitelist aprovada!**
+  
+  Parabéns <@${id}>!  
+  Você foi aprovado na whitelist da **Linha Paulista RP**.
+  
+  🚀 Seu acesso já foi liberado  
+  🎮 Bom RP!`
+    );
+  
     fecharTicket(channel, id);
   }
-
+  
   if (interaction.customId.startsWith("reprovar_")) {
     if (!interaction.member.roles.cache.has(CARGO_STAFF)) {
       return interaction.reply({ content: "Sem permissão", ephemeral: true });
     }
-
+  
     const id = interaction.customId.split("_")[1];
-
-    await interaction.reply("❌ Reprovado! Ticket será fechado.");
+  
+    await interaction.reply(
+  `❌ **Whitelist reprovada**
+  
+  <@${id}>, você não passou na whitelist desta vez.
+  
+  Tente novamente com mais atenção às regras.`
+    );
+  
     fecharTicket(channel, id);
   }
 });
-
 client.on("clientReady", () => {
   console.log(`✅ Bot online como ${client.user.tag}`);
 });
