@@ -4,7 +4,8 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  Events
+  Events,
+  EmbedBuilder
 } = require("discord.js");
 
 const TOKEN = process.env.TOKEN;
@@ -17,14 +18,16 @@ const CARGO_APROVADO = "1496029516370415658";
 const CARGO_STAFF = "1496123378220929094";
 const CANAL_LOG_APROVACAO = "1499502969962496041";
 
-// URL do seu Worker
-const WORKER_URL = process.env.WORKER_URL || "https://transcripts-whitelist.henrique-brantmoura.workers.dev";
+const WORKER_URL =
+  process.env.WORKER_URL ||
+  "https://transcripts-whitelist.henrique-brantmourao.workers.dev";
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -43,6 +46,13 @@ const perguntas = [
   "Você e seus amigos querem fazer vários roubos seguidos rapidamente. Isso pode? Justifique.",
   "Você está sendo abordado por 2 policiais armados. O que você faz e por quê?"
 ];
+
+function criarEmbedPergunta(numero, pergunta) {
+  return new EmbedBuilder()
+    .setColor("#2F80ED")
+    .setTitle(`📋 Pergunta ${numero}/${perguntas.length}`)
+    .setDescription(`**${pergunta}**\n\nResponda abaixo com calma e atenção.`);
+}
 
 function criarHTMLTranscript(channel, mensagensOrdenadas) {
   const htmlMsgs = mensagensOrdenadas.map(m => {
@@ -219,8 +229,15 @@ client.on("channelCreate", async (channel) => {
       .setStyle(ButtonStyle.Primary)
   );
 
+  const embedInicio = new EmbedBuilder()
+    .setColor("#2F80ED")
+    .setTitle("📋 Whitelist Linha Paulista RP")
+    .setDescription(
+      "Clique no botão abaixo para iniciar sua whitelist.\n\nResponda todas as perguntas com atenção."
+    );
+
   await channel.send({
-    content: "Clique para iniciar sua whitelist.",
+    embeds: [embedInicio],
     components: [btn]
   });
 });
@@ -232,12 +249,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (channel.parentId !== CATEGORIA_WHITELIST) return;
 
   if (interaction.customId === "iniciar") {
-    await interaction.reply("Iniciando...");
+    await interaction.reply({
+      content: "✅ Whitelist iniciada!",
+      ephemeral: true
+    });
 
     const userId = interaction.user.id;
     let etapa = 0;
 
-    await channel.send(perguntas[0]);
+    await channel.send({
+      embeds: [criarEmbedPergunta(1, perguntas[0])]
+    });
 
     const collector = channel.createMessageCollector({
       filter: m => m.author.id === userId,
@@ -248,7 +270,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       etapa++;
 
       if (etapa < perguntas.length) {
-        await channel.send(perguntas[etapa]);
+        await channel.send({
+          embeds: [criarEmbedPergunta(etapa + 1, perguntas[etapa])]
+        });
       } else {
         collector.stop("ok");
       }
@@ -256,7 +280,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     collector.on("end", async (_, reason) => {
       if (reason !== "ok") {
-        await channel.send("⏰ Tempo esgotado. Ticket será fechado.").catch(() => {});
+        const embedTempo = new EmbedBuilder()
+          .setColor("#ED4245")
+          .setTitle("⏰ Tempo esgotado")
+          .setDescription("Você demorou muito para responder. O ticket será fechado.");
+
+        await channel.send({ embeds: [embedTempo] }).catch(() => {});
         fecharTicket(channel, userId);
         return;
       }
@@ -272,9 +301,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setStyle(ButtonStyle.Danger)
       );
 
-      await channel.send(`⏳ ${interaction.user}, aguarde um STAFF analisar.`);
+      const embedAguardar = new EmbedBuilder()
+        .setColor("#FEE75C")
+        .setTitle("⏳ Respostas enviadas")
+        .setDescription(`${interaction.user}, aguarde um **STAFF** analisar suas respostas.`);
+
+      await channel.send({ embeds: [embedAguardar] });
+
       await channel.send({
-        content: "📋 Painel da Staff:",
+        content: "📋 **Painel da Staff:**",
         components: [staff]
       });
     });
@@ -284,67 +319,76 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (!interaction.member.roles.cache.has(CARGO_STAFF)) {
       return interaction.reply({ content: "Sem permissão", ephemeral: true });
     }
-  
+
     const id = interaction.customId.split("_")[1];
     const membro = await interaction.guild.members.fetch(id).catch(() => null);
-  
+
     if (membro) {
       await membro.roles.add(CARGO_APROVADO).catch(console.error);
       await membro.roles.remove(CARGO_SEM_WL).catch(console.error);
     }
-  
-    // 📄 LOG DE APROVAÇÃO
+
     const canalLog = interaction.guild.channels.cache.get(CANAL_LOG_APROVACAO);
-  
+
     if (canalLog) {
+      const embedLog = new EmbedBuilder()
+        .setColor("#57F287")
+        .setTitle("✅ Whitelist Aprovada")
+        .setDescription(
+          `👤 **Usuário:** <@${id}>\n` +
+          `🆔 **ID:** \`${id}\`\n\n` +
+          `🛡️ **Aprovado por:** <@${interaction.user.id}>\n` +
+          `🆔 **ID Staff:** \`${interaction.user.id}\`\n\n` +
+          `🎫 **Ticket:** ${channel.name}\n\n` +
+          `📌 Use esse ID para vincular com denúncias.`
+        );
+
       await canalLog.send({
-        content:
-  `✅ **Whitelist Aprovada**
-  
-  👤 **Usuário:** <@${id}>
-  🆔 **ID:** \`${id}\`
-  
-  🛡️ **Aprovado por:** <@${interaction.user.id}>
-  🆔 **ID Staff:** \`${interaction.user.id}\`
-  
-  🎫 **Ticket:** ${channel.name}
-  
-  📌 Use esse ID para vincular com denúncias`
+        content: `<@${id}>`,
+        embeds: [embedLog]
       });
     }
-  
-    // 💬 RESPOSTA BONITA
-    await interaction.reply(
-  `✅ **Whitelist aprovada!**
-  
-  Parabéns <@${id}>!  
-  Você foi aprovado na whitelist da **Linha Paulista RP**.
-  
-  🚀 Seu acesso já foi liberado  
-  🎮 Bom RP!`
-    );
-  
+
+    const embedAprovado = new EmbedBuilder()
+      .setColor("#57F287")
+      .setTitle("✅ Whitelist aprovada!")
+      .setDescription(
+        `**Parabéns <@${id}>!**\n` +
+        `Você foi aprovado na whitelist da **Linha Paulista RP**.\n\n` +
+        `🚀 Seu acesso já foi liberado\n` +
+        `🎮 Bom RP!`
+      );
+
+    await interaction.reply({
+      embeds: [embedAprovado]
+    });
+
     fecharTicket(channel, id);
   }
-  
+
   if (interaction.customId.startsWith("reprovar_")) {
     if (!interaction.member.roles.cache.has(CARGO_STAFF)) {
       return interaction.reply({ content: "Sem permissão", ephemeral: true });
     }
-  
+
     const id = interaction.customId.split("_")[1];
-  
-    await interaction.reply(
-  `❌ **Whitelist reprovada**
-  
-  <@${id}>, você não passou na whitelist desta vez.
-  
-  Tente novamente com mais atenção às regras.`
-    );
-  
+
+    const embedReprovado = new EmbedBuilder()
+      .setColor("#ED4245")
+      .setTitle("❌ Whitelist reprovada")
+      .setDescription(
+        `<@${id}>, você não passou na whitelist desta vez.\n\n` +
+        `Leia as regras com atenção e tente novamente.`
+      );
+
+    await interaction.reply({
+      embeds: [embedReprovado]
+    });
+
     fecharTicket(channel, id);
   }
 });
+
 client.on("clientReady", () => {
   console.log(`✅ Bot online como ${client.user.tag}`);
 });
