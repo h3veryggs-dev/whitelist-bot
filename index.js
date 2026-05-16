@@ -253,43 +253,66 @@ client.on(Events.InteractionCreate, async (interaction) => {
       content: "✅ Whitelist iniciada!",
       ephemeral: true
     });
-
+  
     const userId = interaction.user.id;
+    const respostas = [];
     let etapa = 0;
-
-    await channel.send({
+  
+    let perguntaMsg = await channel.send({
       embeds: [criarEmbedPergunta(1, perguntas[0])]
     });
-
+  
     const collector = channel.createMessageCollector({
       filter: m => m.author.id === userId,
       time: 300000
     });
-
-    collector.on("collect", async () => {
+  
+    collector.on("collect", async (msg) => {
+      respostas.push({
+        pergunta: perguntas[etapa],
+        resposta: msg.content
+      });
+  
+      await msg.delete().catch(() => {});
+      await perguntaMsg.delete().catch(() => {});
+  
       etapa++;
-
+  
       if (etapa < perguntas.length) {
-        await channel.send({
+        perguntaMsg = await channel.send({
           embeds: [criarEmbedPergunta(etapa + 1, perguntas[etapa])]
         });
       } else {
         collector.stop("ok");
       }
     });
-
+  
     collector.on("end", async (_, reason) => {
       if (reason !== "ok") {
         const embedTempo = new EmbedBuilder()
           .setColor("#ED4245")
           .setTitle("⏰ Tempo esgotado")
           .setDescription("Você demorou muito para responder. O ticket será fechado.");
-
+  
         await channel.send({ embeds: [embedTempo] }).catch(() => {});
         fecharTicket(channel, userId);
         return;
       }
-
+  
+      const resumo = respostas.map((r, i) =>
+        `**${i + 1}. ${r.pergunta}**\n${r.resposta}`
+      ).join("\n\n");
+  
+      const embedRespostas = new EmbedBuilder()
+        .setColor("#2F80ED")
+        .setTitle("📋 Respostas da Whitelist")
+        .setDescription(resumo.slice(0, 4000));
+  
+      await channel.send({
+        content: `📌 Respostas de <@${userId}>`,
+        embeds: [embedRespostas]
+      });
+  
       const staff = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setCustomId(`aprovar_${userId}`)
@@ -300,21 +323,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
           .setLabel("❌ Reprovar")
           .setStyle(ButtonStyle.Danger)
       );
-
+  
       const embedAguardar = new EmbedBuilder()
         .setColor("#FEE75C")
         .setTitle("⏳ Respostas enviadas")
         .setDescription(`${interaction.user}, aguarde um **STAFF** analisar suas respostas.`);
-
+  
       await channel.send({ embeds: [embedAguardar] });
-
+  
       await channel.send({
         content: "📋 **Painel da Staff:**",
         components: [staff]
       });
     });
   }
-
+  
   if (interaction.customId.startsWith("aprovar_")) {
     if (!interaction.member.roles.cache.has(CARGO_STAFF)) {
       return interaction.reply({ content: "Sem permissão", ephemeral: true });
